@@ -5,53 +5,81 @@ from pydantic import BaseModel
 from .config import SUPABASE_JWT_SECRET
 from .service import create_user, authenticate_user
 
+# Pydantic model for User input validation
 class User(BaseModel):
     email: str
     password: str
 
+# FastAPI application instance
 app = FastAPI()
 
 # Custom JWTBearer class to decode and verify JWT token
 class JWTBearer(HTTPBearer):
     def __init__(self, auto_error: bool = True):
-        super(JWTBearer, self).__init__(auto_error=auto_error)
+        """
+        Initialize the JWTBearer class.
+        :param auto_error: If True, automatically raises HTTPException on authorization failure.
+        """
+        super().__init__(auto_error=auto_error)
 
     async def __call__(self, request: Request):
-        credentials: HTTPAuthorizationCredentials = await super(JWTBearer, self).__call__(request)
+        """
+        Retrieve the JWT token from the request and validate it.
+        :param request: Incoming request
+        :return: JWT token if valid, raises HTTPException otherwise
+        """
+        credentials: HTTPAuthorizationCredentials = await super().__call__(request)
         if credentials:
             if credentials.scheme.lower() != "bearer":
                 raise HTTPException(status_code=403, detail="Invalid authentication scheme.")
             if not self.verify_jwt(credentials.credentials):
-                raise HTTPException(status_code=403, detail="Invalid token or expired token.")
-            return credentials.credentials  # Return the token
+                raise HTTPException(status_code=403, detail="Invalid or expired token.")
+            return credentials.credentials  # Return valid token
         else:
             raise HTTPException(status_code=403, detail="Invalid authorization code.")
 
     def verify_jwt(self, token: str) -> bool:
+        """
+        Verify the JWT token by decoding it using the provided secret.
+        :param token: JWT token to verify
+        :return: True if the token is valid, False if it is expired or invalid
+        """
         try:
-            # Decode the JWT using the Supabase secret
-            payload = jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
-            return True  # If decoding succeeds, return True
+            # Decode the JWT token using the Supabase JWT secret
+            jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
+            return True  # Token is valid
         except jwt.ExpiredSignatureError:
-            return False
+            return False  # Token has expired
         except jwt.PyJWTError:
-            return False
+            return False  # Invalid token
 
-# Route for user signup
+# Route to handle user signup
 @app.post("/signup/")
 async def signup(user: User):
+    """
+    Endpoint to register a new user.
+    :param user: User model containing email and password
+    :return: Success message and user ID on successful signup
+    """
     signup_response = await create_user(user.email, user.password)
 
+    # Check if there is an error in signup response
     if "error" in signup_response:
         raise HTTPException(status_code=400, detail=signup_response["error"])
 
     return {"message": "Signup successful", "user_id": signup_response.get("user", {}).get("id")}
 
-# Route for user login
+# Route to handle user login
 @app.post("/login/")
 async def login(user: User):
+    """
+    Endpoint for user login, returns access and refresh tokens on successful authentication.
+    :param user: User model containing email and password
+    :return: Access token and refresh token on successful login
+    """
     auth_response = await authenticate_user(user.email, user.password)
 
+    # If authentication fails, raise HTTPException
     if "access_token" not in auth_response:
         raise HTTPException(status_code=401, detail="Authentication failed")
 
@@ -61,9 +89,14 @@ async def login(user: User):
         "refresh_token": auth_response["refresh_token"]
     }
 
-# Protected route example, with JWTBearer dependency
+# Protected route example that requires JWT authentication
 @app.get("/protected/")
 async def protected_route(token: str = Depends(JWTBearer())):
-    # The token is automatically validated by the JWTBearer class
+    """
+    Protected endpoint requiring valid JWT token.
+    :param token: Valid JWT token provided by the client
+    :return: Message confirming access and user information
+    """
+    # The token is automatically validated by the JWTBearer dependency
     current_user = jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
     return {"message": "You have access", "user": current_user}
