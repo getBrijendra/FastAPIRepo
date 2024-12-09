@@ -4,11 +4,10 @@ on:
   push:
     branches:
       - main  # Trigger deployment when pushing to the main branch
-  pull_request:
-    branches:
-      - main
+
 
 jobs:
+  # Job to build and push Docker image
   build_and_push:
     runs-on: ubuntu-latest
 
@@ -19,25 +18,23 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Log in to Google Cloud
+      - name: Log in to Google Cloud Registry
         uses: 'google-github-actions/auth@v1'
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Configure Docker for Artifact Registry
-        run: |
-          gcloud auth configure-docker us-central1-docker.pkg.dev
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v2
 
-      - name: Build Docker Image
+      - name: Build and Push Docker Image
         run: |
-          IMAGE_TAG=us-central1-docker.pkg.dev/$personal-443910/fastapi-repo/fastapi-app:latest
-          docker build -t $IMAGE_TAG .
-
-      - name: Push Docker Image to Artifact Registry
-        run: |
-          IMAGE_TAG=us-central1-docker.pkg.dev/$personal-443910/fastapi-repo/fastapi-app:latest
-          docker push $IMAGE_TAG
-
+          # Set image name and tag
+          IMAGE_NAME=gcr.io/${{ vars.PROJECT_NAME }}/fastapi-app
+          IMAGE_TAG=latest
+          
+          # Build and push Docker image
+          docker build -t $authapi:$latest .
+          docker push $authapi:$latest
 
   # Deploy to Google Cloud (e.g., GKE or Cloud Run)
   deploy_to_gcp:
@@ -53,23 +50,13 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      # For GKE Deployment (use if deploying to Kubernetes Engine)
-      - name: Set up Google Cloud Kubernetes CLI
-        run: |
-          gcloud components install kubectl
-          gcloud config set project $personal-443910
-          gcloud auth activate-service-account --key-file=$GOOGLE_APPLICATION_CREDENTIALS
-          gcloud container clusters get-credentials $GKE_CLUSTER_NAME --zone $ZONE
-
-      - name: Deploy to GKE
-        run: |
-          kubectl apply -f k8s/deployment.yaml
+      
 
       # OR For Cloud Run Deployment (use if deploying to Cloud Run)
       - name: Deploy to Cloud Run
        run: |
           gcloud run deploy fastapi-app \
-           --image gcr.io/$personal-443910/fastapi-app:$latest \
+           --image gcr.io/${{ vars.PROJECT_NAME }}/fastapi-app:$latest \
            --platform managed \
            --region us-central1 \
            --allow-unauthenticated \
