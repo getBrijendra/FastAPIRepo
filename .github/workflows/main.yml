@@ -17,12 +17,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Log in to Google Cloud Registry
+      - name: Log in to Google Cloud Registry (GCR)
         uses: 'google-github-actions/auth@v1'
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Build and Push Docker Image
+      - name: Configure Docker to authenticate with GCR
+        run: |
+          gcloud auth configure-docker gcr.io
+
+      - name: Build and Push Docker Image to GCR
         run: |
           # Set image name and tag
           IMAGE_NAME=gcr.io/${{ vars.PROJECT_NAME }}/fastapi-app
@@ -55,3 +59,31 @@ jobs:
            --region us-central1 \
            --allow-unauthenticated \
            --port 8000
+
+  # Optional: If you need to push to Artifact Registry as well, you can add this job
+  push_to_artifact_registry:
+    runs-on: ubuntu-latest
+    needs: build_and_push  # Ensure the build job completes first
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Log in to Google Cloud (for Artifact Registry)
+        uses: 'google-github-actions/auth@v1'
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Configure Docker to authenticate with Artifact Registry
+        run: |
+          gcloud auth configure-docker us-central1-docker.pkg.dev
+
+      - name: Push to Artifact Registry (if needed)
+        run: |
+          # Set image name for Artifact Registry
+          IMAGE_NAME=us-central1-docker.pkg.dev/${{ vars.PROJECT_NAME }}/fastapi-repo/fastapi-app
+          IMAGE_TAG=latest
+          
+          # Push Docker image to Artifact Registry
+          docker tag gcr.io/${{ vars.PROJECT_NAME }}/fastapi-app:$IMAGE_TAG $IMAGE_NAME:$IMAGE_TAG
+          docker push $IMAGE_NAME:$IMAGE_TAG
