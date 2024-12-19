@@ -3,7 +3,7 @@ name: CI/CD for FastAPI with Docker to GCP
 on:
   push:
     branches:
-      - main  # Trigger deployment when pushing to the main branch
+      - master  # Trigger deployment when pushing to the main branch
 
 jobs:
   # Job to build and push Docker image
